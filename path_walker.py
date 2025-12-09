@@ -1,6 +1,5 @@
 import os
-import sys
-from datetime import datetime
+import time
 from PySide6 import QtWidgets, QtCore
 
 
@@ -8,13 +7,14 @@ class PathWalker(QtCore.QThread):
     """
     Класс-поток для обхода файловых путей
     """
-    size_received = QtCore.Signal(list)
+
+    progress_received = QtCore.Signal(list)
+    data_received = QtCore.Signal(dict)
 
     def __init__(self, path_to_count: str, parent=None):
         super().__init__(parent)
 
-        self._path_to_count = path_to_count
-        self._status = None
+        self.path_to_count = path_to_count
 
     def run(self) -> None:
         """
@@ -22,15 +22,23 @@ class PathWalker(QtCore.QThread):
 
         :return: None
         """
-
+        data = {}
         file_count = 0
         total_size = 0
-        for dirpath, dirnames, filenames in os.walk(self._path_to_count):
+        for dirpath, dirnames, filenames in os.walk(self.path_to_count):
             for filename in filenames:
                 file_path = os.path.join(dirpath, filename)
                 total_size += os.path.getsize(file_path)
                 file_count += 1
-        self.size_received.emit([total_size, file_count])
+
+                step = filenames.index(filename) + 1
+                process_length = len(filenames)
+
+                self.progress_received.emit([step, process_length])
+                time.sleep(0.05)
+        data['file_count'] = file_count
+        data['total_size'] = total_size
+        self.data_received.emit(data)
 
     def set_path(self, path: str) -> None:
         """
@@ -39,8 +47,8 @@ class PathWalker(QtCore.QThread):
         :return: None
         """
 
-        if os.path.exists(path) and os.path.islink(path):
-            self._path_to_count = path
+        if os.path.exists(path) and not os.path.islink(path):
+            self.path_to_count = path
 
 
 class PathWalkerWidget(QtWidgets.QWidget):
@@ -78,6 +86,9 @@ class PathWalkerWidget(QtWidgets.QWidget):
         self.groupBoxPath.layout().addWidget(self.pushButtonStartScan)
 
         self.progressBar = QtWidgets.QProgressBar()
+        self.progressBar.setMinimum(0)
+        self.progressBar.setMaximum(100)
+        self.progressBar.setValue(0)
 
         self.groupBoxProgress = QtWidgets.QGroupBox('Прогресс сканирования')
         self.groupBoxProgress.setLayout(QtWidgets.QHBoxLayout())
@@ -88,6 +99,7 @@ class PathWalkerWidget(QtWidgets.QWidget):
         layoutPath.addWidget(self.groupBoxProgress)
 
         self.plainTextEditLog = QtWidgets.QPlainTextEdit()
+        self.plainTextEditLog.setReadOnly(True)
         self.labelCount = QtWidgets.QLabel()
         self.labelSize = QtWidgets.QLabel()
 
@@ -111,6 +123,7 @@ class PathWalkerWidget(QtWidgets.QWidget):
         """
 
         self.path_walker = PathWalker('')
+        # self.path_walker.
 
     def initSignals(self) -> None:
         """
@@ -121,7 +134,9 @@ class PathWalkerWidget(QtWidgets.QWidget):
 
         self.pushButtonSetPath.clicked.connect(self.onPushButtonSetPathClicked)
         self.pushButtonStartScan.clicked.connect(self.onPushButtonStartScanClicked)
-        # self.system_info_app.systemInfoReceived.connect(self.system_info_updated)
+        self.path_walker.data_received.connect(lambda data: self.update_log(data))
+        self.path_walker.progress_received.connect(lambda progress: self.update_progress_bar(progress))
+        self.path_walker.finished.connect(lambda: self.pushButtonStartScan.setEnabled(True))
 
     def onPushButtonStartScanClicked(self) -> None:
         """
@@ -132,6 +147,8 @@ class PathWalkerWidget(QtWidgets.QWidget):
 
         self.pushButtonStartScan.setEnabled(False)
         self.path_walker.set_path(self.lineEditPath.text())
+
+        self.start_time = time.ctime()
         self.path_walker.start()
 
 
@@ -145,6 +162,28 @@ class PathWalkerWidget(QtWidgets.QWidget):
         directory_path = QtWidgets.QFileDialog.getExistingDirectory(self, "Выберите каталог для сканирования", "")
         self.lineEditPath.setText(directory_path)
 
+    def update_progress_bar(self, progress: list) -> None:
+        step_value = 100 / progress[1]
+        self.progressBar.setValue(progress[0] * step_value)
+
+    def update_log(self, data: dict) -> None:
+        """
+        Обработчик сигнала полученных данных с потока path_walker, обновляет лог и лейблы
+
+        :param data: список с данными, полученными в процессе работы потока path_walker
+        :return: None
+        """
+
+        finish_time = time.ctime()
+
+        self.labelSize.setText(f'Размер: {data["total_size"]}\n')
+        self.labelCount.setText(f'Кол-во: {data["file_count"]}\n')
+        self.plainTextEditLog.appendPlainText(f'Путь к папке: {self.lineEditPath.text()}\n\n'
+                                              f'Общий размер файлов: {data["total_size"]}\n'
+                                              f'Просканировано файлов: {data["file_count"]}\n\n'
+                                              f'Время начала сканирования: {self.start_time}\n'
+                                              f'Время завершения сканирования: {finish_time}\n'
+                                              f'{"="  * 40}\n')
 
 
 if __name__ == "__main__":
