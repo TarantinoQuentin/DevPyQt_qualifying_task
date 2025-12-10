@@ -56,7 +56,7 @@ class PathWalkerWidget(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle('PathWalker')
-        self.resize(750, 430)
+        self.setFixedSize(750, 430)
 
         self.initUi()
         self.initThreads()
@@ -176,10 +176,19 @@ class PathWalkerWidget(QtWidgets.QWidget):
 
         finish_time = time.ctime()
 
-        self.labelSize.setText(f'Размер: {data["total_size"]}\n')
+        if data["total_size"] >= pow(1024, 3):
+            formated_total_size = f'{round(data["total_size"] / pow(1024, 3), 1)} ГБ'
+        elif data["total_size"] >= pow(1024, 2):
+            formated_total_size = f'{round(data["total_size"] / pow(1024, 2), 1)} МБ'
+        elif data["total_size"] >= 1024:
+            formated_total_size = f'{round((data["total_size"] / 1024), 1)} КБ'
+        else:
+            formated_total_size = f'{data["total_size"]} Б'
+
+        self.labelSize.setText(f'Размер: {formated_total_size}\n')
         self.labelCount.setText(f'Кол-во: {data["file_count"]}\n')
         self.plainTextEditLog.appendPlainText(f'Путь к папке: {self.lineEditPath.text()}\n\n'
-                                              f'Общий размер файлов: {data["total_size"]}\n'
+                                              f'Общий размер файлов: {formated_total_size}\n'
                                               f'Просканировано файлов: {data["file_count"]}\n\n'
                                               f'Время начала сканирования: {self.start_time}\n'
                                               f'Время завершения сканирования: {finish_time}\n'
